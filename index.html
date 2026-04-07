@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meu Player de Filmes e Séries</title>
+    <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet" />
+    <style>
+        body { background: #121212; color: white; font-family: sans-serif; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: auto; }
+        .player-box { background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 20px; }
+        .controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        input, button { padding: 10px; border-radius: 5px; border: none; }
+        input { flex-grow: 1; background: #333; color: white; }
+        button { background: #e50914; color: white; cursor: pointer; font-weight: bold; }
+        .playlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+        .item { background: #222; padding: 15px; border-radius: 5px; text-align: center; cursor: pointer; transition: 0.3s; }
+        .item:hover { background: #444; border: 1px solid #e50914; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>CinePlayer Pro</h2>
+
+    <div class="player-box">
+        <video id="my-video" class="video-js vjs-big-play-centered vjs-16-9" controls preload="auto" data-setup='{}'>
+            <p class="vjs-no-js">Para ver este vídeo, habilite o JavaScript.</p>
+        </video>
+    </div>
+
+    <div class="controls">
+        <input type="text" id="m3u-url" placeholder="Cole o link da sua lista .m3u aqui...">
+        <button onclick="carregarListaExterna()">Carregar Lista</button>
+    </div>
+
+    <h3>Sua Lista Grátis</h3>
+    <div class="playlist" id="lista-embutida">
+        <div class="item" onclick="playVideo('https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8')">Filme Exemplo 1</div>
+        <div class="item" onclick="playVideo('https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8')">Série Exemplo 2</div>
+        <div class="item" onclick="playVideo('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8')">Canal de Teste 3</div>
+    </div>
+</div>
+
+<script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
+<script>
+    var player = videojs('my-video');
+
+    function playVideo(url) {
+        player.src({
+            src: url,
+            type: 'application/x-mpegURL'
+        });
+        player.play();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // Função simples para carregar lista via URL (Precisa de CORS liberado na lista)
+    async function carregarListaExterna() {
+        const url = document.getElementById('m3u-url').value;
+        if (!url) return alert("Insira um link!");
+
+        try {
+            const response = await fetch(url);
+            const data = await response.text();
+            // Aqui você poderia criar um parser de M3U para listar os canais dinamicamente.
+            // Por enquanto, ele tentará tocar o link direto se for um arquivo de vídeo único.
+            playVideo(url);
+        } catch (error) {
+            alert("Erro ao carregar lista. Verifique o link ou se a lista permite acesso (CORS).");
+        }
+    }
+</script>
+
+</body>
+</html>
