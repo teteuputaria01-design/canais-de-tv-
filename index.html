@@ -8,13 +8,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
         :root { --primary: #e50914; --bg: #050505; --card: #121212; }
-        
         body { background: var(--bg); color: white; font-family: 'Inter', sans-serif; margin: 0; overflow-x: hidden; }
         
-        /* TELA 1: GRADE DE CANAIS */
         #home-screen { padding: 20px; display: block; }
         .header { text-align: center; padding: 30px 0; border-bottom: 1px solid #222; margin-bottom: 30px; }
-        .header h1 { font-size: 24px; letter-spacing: 2px; }
+        .header h1 { font-size: 24px; letter-spacing: 2px; margin: 0; }
         
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px; max-width: 1200px; margin: auto; }
         
@@ -27,19 +25,24 @@
         .channel-card h4 { margin: 10px 5px 2px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .channel-card span { font-size: 10px; color: #888; text-transform: uppercase; }
 
-        /* TELA 2: PLAYER FULLSCREEN */
         #player-screen { 
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
             background: #000; z-index: 999; flex-direction: column;
         }
         .back-btn { 
             position: absolute; top: 20px; left: 20px; z-index: 1001;
-            background: rgba(0,0,0,0.6); border: 1px solid #fff; color: white;
-            padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold;
+            background: rgba(0,0,0,0.8); border: 1px solid #fff; color: white;
+            padding: 10px 18px; border-radius: 5px; cursor: pointer; font-weight: bold;
         }
         .video-container { width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center; }
-        
         .video-js { width: 100% !important; height: 100% !important; }
+
+        /* Botão de emergência caso o vídeo não carregue */
+        #error-link {
+            display: none; position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%);
+            z-index: 1002; background: var(--primary); color: white; text-decoration: none;
+            padding: 15px 25px; border-radius: 8px; font-weight: bold; text-align: center;
+        }
 
         @media (max-width: 600px) { .grid { grid-template-columns: repeat(2, 1fr); } }
     </style>
@@ -51,15 +54,16 @@
         <h1>CINE<span style="color:var(--primary)">AI</span> PREMIUM</h1>
     </div>
     <div class="grid" id="lista-canais">
-        <p style="text-align: center; grid-column: 1/-1;">Carregando canais...</p>
+        <p style="text-align: center; grid-column: 1/-1;">Carregando sua lista...</p>
     </div>
 </div>
 
 <div id="player-screen">
     <button class="back-btn" onclick="fecharPlayer()">❮ VOLTAR</button>
+    <a id="error-link" target="_blank">O VÍDEO NÃO ABRE? CLIQUE AQUI</a>
     <div class="video-container">
-        <video id="main-video" class="video-js vjs-big-play-centered" controls preload="auto">
-            <p class="vjs-no-js">Erro ao carregar vídeo.</p>
+        <video id="main-video" class="video-js vjs-big-play-centered" controls preload="auto" crossorigin="anonymous">
+            <p class="vjs-no-js">Navegador não suportado.</p>
         </video>
     </div>
 </div>
@@ -67,43 +71,57 @@
 <script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
 <script>
     const player = videojs('main-video');
-    
-    // IMPORTANTE: Coloque o link direto do seu arquivo canais.json no GitHub (Raw)
     const JSON_URL = 'canais.json'; 
+
+    // Monitora erros no player para mostrar o botão de emergência
+    player.on('error', function() {
+        const errorBtn = document.getElementById('error-link');
+        errorBtn.style.display = 'block';
+        errorBtn.href = player.src();
+        console.log("Erro ao carregar o vídeo. Oferecendo link direto.");
+    });
 
     async function carregarCanais() {
         try {
-            const response = await fetch(JSON_URL);
+            // Adicionado timestamp para evitar cache do arquivo JSON
+            const response = await fetch(JSON_URL + '?t=' + new Date().getTime());
             const canais = await response.json();
             const container = document.getElementById('lista-canais');
             
             container.innerHTML = canais.map(item => `
                 <div class="channel-card" onclick="abrirPlayer('${item.url}')">
-                    <img src="${item.logo}" onerror="this.src='https://via.placeholder.com/150x200?text=Sem+Logo'">
+                    <img src="${item.logo}" onerror="this.src='https://via.placeholder.com/150x200?text=CINE+AI'">
                     <span>${item.categoria}</span>
                     <h4>${item.nome}</h4>
                 </div>
             `).join('');
         } catch (e) {
-            document.getElementById('lista-canais').innerHTML = "<p>Erro ao carregar lista de canais.</p>";
+            document.getElementById('lista-canais').innerHTML = "<p>Erro ao carregar canais. Verifique o canais.json</p>";
         }
     }
 
     function abrirPlayer(url) {
+        // Tenta forçar HTTPS se o site estiver em HTTPS
+        let finalUrl = url;
+        if (window.location.protocol === 'https:' && url.startsWith('http://')) {
+            console.warn("Link HTTP em site HTTPS pode ser bloqueado pelo navegador.");
+        }
+
         document.getElementById('home-screen').style.display = 'none';
         document.getElementById('player-screen').style.display = 'flex';
+        document.getElementById('error-link').style.display = 'none'; // Reseta o botão de erro
         
-        player.src({ src: url, type: 'application/x-mpegURL' });
+        player.src({ src: finalUrl, type: 'application/x-mpegURL' });
         player.play();
     }
 
     function fecharPlayer() {
         player.pause();
+        player.reset();
         document.getElementById('player-screen').style.display = 'none';
         document.getElementById('home-screen').style.display = 'block';
     }
 
-    // Inicia o app buscando os dados
     carregarCanais();
 </script>
 
