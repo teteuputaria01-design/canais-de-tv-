@@ -7,7 +7,7 @@
     <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: #e50914; --bg: #050505; --card: #121212; }
+        :root { --primary: #e50914; --bg: #050505; --card: #121212; --success: #28a745; }
         body { background: var(--bg); color: white; font-family: 'Inter', sans-serif; margin: 0; overflow-x: hidden; }
         
         #home-screen { padding: 20px; display: block; }
@@ -37,12 +37,15 @@
         .video-container { width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center; }
         .video-js { width: 100% !important; height: 100% !important; }
 
-        /* Botão de emergência caso o vídeo não carregue */
-        #error-link {
-            display: none; position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%);
-            z-index: 1002; background: var(--primary); color: white; text-decoration: none;
+        /* Botões de emergência */
+        .btn-panic {
+            display: none; position: absolute; left: 50%; transform: translateX(-50%);
+            z-index: 1002; color: white; text-decoration: none;
             padding: 15px 25px; border-radius: 8px; font-weight: bold; text-align: center;
+            width: 80%; max-width: 300px; border: none; cursor: pointer;
         }
+        #error-link { bottom: 25%; background: var(--primary); }
+        #vlc-btn { bottom: 12%; background: var(--success); }
 
         @media (max-width: 600px) { .grid { grid-template-columns: repeat(2, 1fr); } }
     </style>
@@ -60,7 +63,11 @@
 
 <div id="player-screen">
     <button class="back-btn" onclick="fecharPlayer()">❮ VOLTAR</button>
-    <a id="error-link" target="_blank">O VÍDEO NÃO ABRE? CLIQUE AQUI</a>
+    
+    <a id="error-link" class="btn-panic" target="_blank">VÍDEO NÃO ABRE? TELA BRANCA</a>
+    
+    <button id="vlc-btn" class="btn-panic" onclick="abrirExterno()">ABRIR NO PLAYER EXTERNO (VLC)</button>
+
     <div class="video-container">
         <video id="main-video" class="video-js vjs-big-play-centered" controls preload="auto" crossorigin="anonymous">
             <p class="vjs-no-js">Navegador não suportado.</p>
@@ -73,17 +80,17 @@
     const player = videojs('main-video');
     const JSON_URL = 'canais.json'; 
 
-    // Monitora erros no player para mostrar o botão de emergência
+    // Se der erro no player, mostra as opções de saída externa
     player.on('error', function() {
-        const errorBtn = document.getElementById('error-link');
-        errorBtn.style.display = 'block';
-        errorBtn.href = player.src();
-        console.log("Erro ao carregar o vídeo. Oferecendo link direto.");
+        document.getElementById('error-link').style.display = 'block';
+        document.getElementById('vlc-btn').style.display = 'block';
+        
+        const currentUrl = player.src();
+        document.getElementById('error-link').href = currentUrl;
     });
 
     async function carregarCanais() {
         try {
-            // Adicionado timestamp para evitar cache do arquivo JSON
             const response = await fetch(JSON_URL + '?t=' + new Date().getTime());
             const canais = await response.json();
             const container = document.getElementById('lista-canais');
@@ -96,22 +103,19 @@
                 </div>
             `).join('');
         } catch (e) {
-            document.getElementById('lista-canais').innerHTML = "<p>Erro ao carregar canais. Verifique o canais.json</p>";
+            document.getElementById('lista-canais').innerHTML = "<p>Erro ao carregar lista de canais.</p>";
         }
     }
 
     function abrirPlayer(url) {
-        // Tenta forçar HTTPS se o site estiver em HTTPS
-        let finalUrl = url;
-        if (window.location.protocol === 'https:' && url.startsWith('http://')) {
-            console.warn("Link HTTP em site HTTPS pode ser bloqueado pelo navegador.");
-        }
-
         document.getElementById('home-screen').style.display = 'none';
         document.getElementById('player-screen').style.display = 'flex';
-        document.getElementById('error-link').style.display = 'none'; // Reseta o botão de erro
         
-        player.src({ src: finalUrl, type: 'application/x-mpegURL' });
+        // Esconde botões de erro ao iniciar novo vídeo
+        document.getElementById('error-link').style.display = 'none';
+        document.getElementById('vlc-btn').style.display = 'none';
+        
+        player.src({ src: url, type: 'application/x-mpegURL' });
         player.play();
     }
 
@@ -120,6 +124,13 @@
         player.reset();
         document.getElementById('player-screen').style.display = 'none';
         document.getElementById('home-screen').style.display = 'block';
+    }
+
+    // Função para forçar a abertura no VLC do Android
+    function abrirExterno() {
+        const url = player.src();
+        // Esse link especial (intent) "chama" o app do VLC instalado no celular
+        window.location.href = "intent://" + url.replace(/^https?:\/\//, "") + "#Intent;scheme=http;type=video/*;package=org.videolan.vlc;end";
     }
 
     carregarCanais();
