@@ -12,18 +12,18 @@
         
         #home-screen { padding: 20px; display: block; }
         .header { text-align: center; padding: 30px 0; border-bottom: 1px solid #222; margin-bottom: 30px; }
-        .header h1 { font-size: 24px; letter-spacing: 2px; margin: 0; }
+        .header h1 { font-size: 24px; letter-spacing: 2px; margin: 0; font-weight: 700; }
         
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px; max-width: 1200px; margin: auto; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; max-width: 1200px; margin: auto; }
         
         .channel-card { 
             background: var(--card); border-radius: 12px; overflow: hidden; cursor: pointer;
             transition: 0.3s; border: 1px solid #222; text-align: center; padding-bottom: 10px;
         }
         .channel-card:hover { transform: scale(1.05); border-color: var(--primary); box-shadow: 0 0 15px rgba(229, 9, 20, 0.4); }
-        .channel-card img { width: 100%; height: 180px; object-fit: cover; background: #1a1a1a; }
+        .channel-card img { width: 100%; height: 160px; object-fit: cover; background: #1a1a1a; display: block; }
         .channel-card h4 { margin: 10px 5px 2px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .channel-card span { font-size: 10px; color: #888; text-transform: uppercase; }
+        .channel-card span { font-size: 10px; color: var(--primary); font-weight: bold; text-transform: uppercase; }
 
         #player-screen { 
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
@@ -31,21 +31,23 @@
         }
         .back-btn { 
             position: absolute; top: 20px; left: 20px; z-index: 1001;
-            background: rgba(0,0,0,0.8); border: 1px solid #fff; color: white;
-            padding: 10px 18px; border-radius: 5px; cursor: pointer; font-weight: bold;
+            background: rgba(0,0,0,0.7); border: 1px solid #fff; color: white;
+            padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold;
         }
         .video-container { width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center; }
+        
+        /* Ajuste para o player ocupar a tela toda */
         .video-js { width: 100% !important; height: 100% !important; }
 
-        /* Botões de emergência */
+        /* Botões de emergência melhorados */
         .btn-panic {
             display: none; position: absolute; left: 50%; transform: translateX(-50%);
             z-index: 1002; color: white; text-decoration: none;
             padding: 15px 25px; border-radius: 8px; font-weight: bold; text-align: center;
-            width: 80%; max-width: 300px; border: none; cursor: pointer;
+            width: 85%; max-width: 320px; border: none; cursor: pointer; font-size: 14px;
         }
-        #error-link { bottom: 25%; background: var(--primary); }
-        #vlc-btn { bottom: 12%; background: var(--success); }
+        #error-link { bottom: 30%; background: var(--primary); box-shadow: 0 4px 15px rgba(229, 9, 20, 0.5); }
+        #vlc-btn { bottom: 15%; background: var(--success); box-shadow: 0 4px 15px rgba(40, 167, 69, 0.5); }
 
         @media (max-width: 600px) { .grid { grid-template-columns: repeat(2, 1fr); } }
     </style>
@@ -57,31 +59,41 @@
         <h1>CINE<span style="color:var(--primary)">AI</span> PREMIUM</h1>
     </div>
     <div class="grid" id="lista-canais">
-        <p style="text-align: center; grid-column: 1/-1;">Carregando sua lista...</p>
+        <p style="text-align: center; grid-column: 1/-1;">Buscando canais...</p>
     </div>
 </div>
 
 <div id="player-screen">
     <button class="back-btn" onclick="fecharPlayer()">❮ VOLTAR</button>
     
-    <a id="error-link" class="btn-panic" target="_blank">VÍDEO NÃO ABRE? TELA BRANCA</a>
-    
+    <a id="error-link" class="btn-panic" target="_blank">LINK DIRETO (ABRIR NO NAVEGADOR)</a>
     <button id="vlc-btn" class="btn-panic" onclick="abrirExterno()">ABRIR NO PLAYER EXTERNO (VLC)</button>
 
     <div class="video-container">
         <video id="main-video" class="video-js vjs-big-play-centered" controls preload="auto" crossorigin="anonymous">
-            <p class="vjs-no-js">Navegador não suportado.</p>
+            <p class="vjs-no-js">Seu navegador não suporta este player.</p>
         </video>
     </div>
 </div>
 
 <script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
+<script src="https://unpkg.com/@videojs/http-streaming@2.14.2/dist/videojs-http-streaming.min.js"></script>
+
 <script>
-    const player = videojs('main-video');
+    const player = videojs('main-video', {
+        fluid: true,
+        autoplay: false,
+        controls: true,
+        responsive: true
+    });
+
     const JSON_URL = 'canais.json'; 
 
-    // Se der erro no player, mostra as opções de saída externa
+    // Se o player travar ou der erro de formato
     player.on('error', function() {
+        const errorMsg = player.error();
+        console.log("Erro detectado:", errorMsg);
+        
         document.getElementById('error-link').style.display = 'block';
         document.getElementById('vlc-btn').style.display = 'block';
         
@@ -91,19 +103,27 @@
 
     async function carregarCanais() {
         try {
-            const response = await fetch(JSON_URL + '?t=' + new Date().getTime());
+            // Cache bust para sempre pegar a lista nova
+            const response = await fetch(JSON_URL + '?v=' + Math.random());
             const canais = await response.json();
             const container = document.getElementById('lista-canais');
             
+            if (canais.length === 0) {
+                container.innerHTML = "<p>Nenhum canal encontrado.</p>";
+                return;
+            }
+
             container.innerHTML = canais.map(item => `
                 <div class="channel-card" onclick="abrirPlayer('${item.url}')">
                     <img src="${item.logo}" onerror="this.src='https://via.placeholder.com/150x200?text=CINE+AI'">
-                    <span>${item.categoria}</span>
-                    <h4>${item.nome}</h4>
+                    <div style="padding: 5px;">
+                        <span>${item.categoria}</span>
+                        <h4>${item.nome}</h4>
+                    </div>
                 </div>
             `).join('');
         } catch (e) {
-            document.getElementById('lista-canais').innerHTML = "<p>Erro ao carregar lista de canais.</p>";
+            document.getElementById('lista-canais').innerHTML = "<p>Erro ao conectar com a lista de canais.</p>";
         }
     }
 
@@ -111,12 +131,24 @@
         document.getElementById('home-screen').style.display = 'none';
         document.getElementById('player-screen').style.display = 'flex';
         
-        // Esconde botões de erro ao iniciar novo vídeo
+        // Reset dos botões de erro
         document.getElementById('error-link').style.display = 'none';
         document.getElementById('vlc-btn').style.display = 'none';
         
-        player.src({ src: url, type: 'application/x-mpegURL' });
-        player.play();
+        // Define o tipo como HLS explicitamente para evitar o "Access Denied" do navegador
+        player.src({ 
+            src: url, 
+            type: 'application/x-mpegURL' 
+        });
+        
+        player.ready(function() {
+            player.play().catch(function(error) {
+                console.log("Autoplay bloqueado ou erro no link.");
+                // Se não rodar de primeira, mostra os botões
+                document.getElementById('error-link').style.display = 'block';
+                document.getElementById('vlc-btn').style.display = 'block';
+            });
+        });
     }
 
     function fecharPlayer() {
@@ -126,11 +158,12 @@
         document.getElementById('home-screen').style.display = 'block';
     }
 
-    // Função para forçar a abertura no VLC do Android
     function abrirExterno() {
         const url = player.src();
-        // Esse link especial (intent) "chama" o app do VLC instalado no celular
-        window.location.href = "intent://" + url.replace(/^https?:\/\//, "") + "#Intent;scheme=http;type=video/*;package=org.videolan.vlc;end";
+        if (!url) return;
+        // Tenta abrir no VLC via Intent (Android)
+        const vlcIntent = "intent://" + url.replace(/^https?:\/\//, "") + "#Intent;scheme=http;type=video/*;package=org.videolan.vlc;end";
+        window.location.href = vlcIntent;
     }
 
     carregarCanais();
@@ -138,3 +171,4 @@
 
 </body>
 </html>
+
