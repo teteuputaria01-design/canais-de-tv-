@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>CineAI - Premium (HLS Fix)</title>
+    <title>CineAI - Premium (Fix Autoplay/CORS)</title>
     <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
@@ -48,6 +48,12 @@
         #error-link { bottom: 30%; background: var(--primary); box-shadow: 0 4px 15px rgba(229, 9, 20, 0.5); }
         #vlc-btn { bottom: 15%; background: var(--success); box-shadow: 0 4px 15px rgba(40, 167, 69, 0.5); }
         .error-msg { position: absolute; bottom: 45%; left: 0; right: 0; text-align: center; color: #ff8888; background: rgba(0,0,0,0.7); padding: 8px; z-index: 1002; font-size: 12px; display: none; }
+        .reload-btn {
+            position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%);
+            background: #333; color: white; border: 1px solid #777;
+            padding: 12px 20px; border-radius: 8px; cursor: pointer; z-index: 1003;
+            display: none; font-weight: bold;
+        }
 
         @media (max-width: 600px) { .grid { grid-template-columns: repeat(2, 1fr); } }
     </style>
@@ -68,6 +74,7 @@
     
     <a id="error-link" class="btn-panic" target="_blank">🔗 LINK DIRETO (ABRIR NO NAVEGADOR)</a>
     <button id="vlc-btn" class="btn-panic" onclick="abrirExterno()">🎬 ABRIR NO VLC (EXTERNO)</button>
+    <button class="reload-btn" id="reload-btn" onclick="recarregarStream()">⟳ TENTAR NOVAMENTE</button>
     <div id="player-error-msg" class="error-msg"></div>
 
     <div class="video-container">
@@ -77,7 +84,6 @@
     </div>
 </div>
 
-<!-- Scripts: video.js + hls.js para compatibilidade total com Chromium -->
 <script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
@@ -87,10 +93,11 @@
     let hlsInstance = null;
     let currentUrl = '';
 
-    // Inicializa o player video.js com configurações básicas
+    // Inicializa o player video.js UMA ÚNICA VEZ
     function initPlayer() {
         if (player) {
-            player.dispose();
+            // Apenas retorna o existente, não recria
+            return player;
         }
         player = videojs(videoElement, {
             controls: true,
@@ -104,74 +111,109 @@
                 }
             }
         });
+        
+        // Tratamento de erro nativo do player
+        player.on('error', function() {
+            const error = player.error();
+            console.warn('Erro do player:', error);
+            mostrarErro('Falha na reprodução. Tente recarregar ou use link externo.');
+            exibirBotoesEmergencia();
+        });
+        
         return player;
     }
 
-    // Função principal para carregar HLS usando hls.js (Chromium) ou nativo (Safari)
+    // Garante que o player esteja pronto
+    initPlayer();
+
+    // Função principal para carregar HLS
     function carregarStream(url) {
         currentUrl = url;
         
-        // Esconde mensagens de erro e botões
+        // Esconde mensagens e botões
         document.getElementById('error-link').style.display = 'none';
         document.getElementById('vlc-btn').style.display = 'none';
+        document.getElementById('reload-btn').style.display = 'none';
         document.getElementById('player-error-msg').style.display = 'none';
         
-        // Se já existe uma instância hls, destrói
+        // Destroi instância hls.js anterior
         if (hlsInstance) {
             hlsInstance.destroy();
             hlsInstance = null;
         }
         
-        // Verifica se o navegador suporta HLS nativamente (Safari, Edge antigo)
+        // Reseta o player (limpa source e erros)
+        player.pause();
+        player.reset();
+        
+        // Verifica protocolo file: (alerta usuário)
+        if (window.location.protocol === 'file:') {
+            mostrarErro('⚠️ Execute via servidor HTTP (ex: Live Server). Protocolo file:// bloqueia streams.');
+            exibirBotoesEmergencia();
+            return;
+        }
+        
+        // Verifica suporte nativo (Safari)
         if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
-            // Navegador com suporte nativo (Safari)
             console.log("Usando HLS nativo");
             player.src({ src: url, type: 'application/vnd.apple.mpegurl' });
-            player.play().catch(e => mostrarErro("Autoplay bloqueado. Clique no play."));
+            
+            // Força play após interação do usuário (clique no card)
+            player.play().catch(e => {
+                console.warn("Autoplay nativo falhou:", e);
+                mostrarErro("Clique no botão play do player.");
+            });
         } 
         else if (Hls.isSupported()) {
-            // Chromium, Firefox, etc: usa hls.js
-            console.log("Usando hls.js para reprodução");
+            console.log("Usando hls.js");
             hlsInstance = new Hls({
                 enableWorker: true,
                 lowLatencyMode: true,
                 maxLoadingDelay: 4,
-                startPosition: -1
+                startPosition: -1,
+                // Tolerância a CORS restrito
+                xhrSetup: function(xhr, url) {
+                    xhr.withCredentials = false; // evita problemas de credenciais
+                }
             });
             
             hlsInstance.loadSource(url);
             hlsInstance.attachMedia(videoElement);
             
             hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
-                player.play().catch(e => console.warn("Autoplay bloqueado:", e));
+                // Toca imediatamente (dentro do clique)
+                player.play().catch(e => {
+                    console.warn("Autoplay hls.js falhou:", e);
+                    mostrarErro("Toque no play para iniciar.");
+                });
             });
             
             hlsInstance.on(Hls.Events.ERROR, function(event, data) {
                 if (data.fatal) {
+                    let msg = '';
                     switch(data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
-                            mostrarErro("Erro de rede. Verifique sua conexão.");
+                            msg = 'Erro de rede. Verifique conexão ou CORS do servidor.';
                             break;
                         case Hls.ErrorTypes.MEDIA_ERROR:
-                            mostrarErro("Erro no formato do vídeo. Tente outro canal.");
+                            msg = 'Formato de vídeo não suportado.';
                             break;
                         default:
-                            mostrarErro("Falha ao carregar o stream.");
-                            break;
+                            msg = 'Falha crítica ao carregar.';
                     }
-                    // Mostra botões de emergência
-                    document.getElementById('error-link').style.display = 'block';
-                    document.getElementById('vlc-btn').style.display = 'block';
-                    document.getElementById('error-link').href = url;
+                    mostrarErro(msg);
+                    exibirBotoesEmergencia();
+                    
+                    // Tenta recuperar se possível
+                    if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                        hlsInstance.recoverMediaError();
+                    }
                 }
             });
         } 
         else {
-            // Navegador muito antigo
-            mostrarErro("Seu navegador não suporta reprodução de vídeo HLS.");
-            document.getElementById('error-link').style.display = 'block';
-            document.getElementById('vlc-btn').style.display = 'block';
-            document.getElementById('error-link').href = url;
+            mostrarErro("Navegador não suporta HLS.");
+            exibirBotoesEmergencia();
         }
     }
     
@@ -179,7 +221,20 @@
         const errorDiv = document.getElementById('player-error-msg');
         errorDiv.textContent = mensagem;
         errorDiv.style.display = 'block';
-        console.error(mensagem);
+        document.getElementById('reload-btn').style.display = 'block';
+    }
+    
+    function exibirBotoesEmergencia() {
+        document.getElementById('error-link').href = currentUrl;
+        document.getElementById('error-link').style.display = 'block';
+        document.getElementById('vlc-btn').style.display = 'block';
+        document.getElementById('reload-btn').style.display = 'block';
+    }
+    
+    function recarregarStream() {
+        if (currentUrl) {
+            carregarStream(currentUrl);
+        }
     }
 
     // Carrega os canais do JSON
@@ -206,20 +261,19 @@
                 </div>
             `).join('');
         } catch (e) {
-            document.getElementById('lista-canais').innerHTML = `<p>Erro ao carregar lista: ${e.message}. Verifique o arquivo canais.json.</p>`;
+            document.getElementById('lista-canais').innerHTML = `<p>Erro ao carregar lista: ${e.message}. Verifique se está usando HTTP e se canais.json existe.</p>`;
         }
     }
 
-    // Abre player com o stream
+    // Abre player com o stream (chamada diretamente no clique)
     function abrirPlayer(url) {
         document.getElementById('home-screen').style.display = 'none';
         document.getElementById('player-screen').style.display = 'flex';
         
-        // Reinicia o player video.js
-        if (player) player.dispose();
+        // Garante que o player está inicializado
         initPlayer();
         
-        // Carrega o stream
+        // Carrega o stream (o autoplay será tentado dentro)
         carregarStream(url);
     }
 
@@ -231,37 +285,46 @@
         }
         if (player) {
             player.pause();
-            player.dispose();
-            player = null;
+            player.reset();
         }
         document.getElementById('player-screen').style.display = 'none';
         document.getElementById('home-screen').style.display = 'block';
+        // Esconde botões de erro ao voltar
+        document.getElementById('error-link').style.display = 'none';
+        document.getElementById('vlc-btn').style.display = 'none';
+        document.getElementById('reload-btn').style.display = 'none';
+        document.getElementById('player-error-msg').style.display = 'none';
     }
 
-    // Abrir no VLC (Android) ou tenta protocolo vlc://
+    // Abrir no VLC
     function abrirExterno() {
-        const url = currentUrl;
-        if (!url) return;
+        if (!currentUrl) return;
         
-        // Android: intent VLC
         if (/android/i.test(navigator.userAgent)) {
-            const vlcIntent = `intent://${url.replace(/^https?:\/\//, '')}#Intent;scheme=http;type=video/*;package=org.videolan.vlc;end`;
+            const vlcIntent = `intent://${currentUrl.replace(/^https?:\/\//, '')}#Intent;scheme=http;type=video/*;package=org.videolan.vlc;end`;
             window.location.href = vlcIntent;
-        } 
-        // Desktop: tenta vlc://
-        else {
-            window.location.href = `vlc://${url}`;
+        } else {
+            window.location.href = `vlc://${currentUrl}`;
         }
-        // Fallback: copiar link
+        
         setTimeout(() => {
-            navigator.clipboard.writeText(url);
-            alert("Link copiado! Cole no VLC ou outro player.");
+            navigator.clipboard?.writeText(currentUrl).then(() => {
+                alert("Link copiado! Cole no VLC ou outro player.");
+            }).catch(() => {
+                prompt("Copie manualmente:", currentUrl);
+            });
         }, 500);
     }
 
     // Inicialização
-    initPlayer(); // player vazio
     carregarCanais();
+    
+    // Se rodar localmente com file://, alerta
+    if (window.location.protocol === 'file:') {
+        setTimeout(() => {
+            alert("⚠️ ATENÇÃO: Você está executando via file://. Para funcionar corretamente, abra com um servidor local (ex: extensão Live Server do VSCode).");
+        }, 500);
+    }
 </script>
 
 </body>
